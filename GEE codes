@@ -1,2 +1,101 @@
 # twincity_LULC
-LULC effects of twin city of Odisha
+#LULC effects of twin city of Odisha
+
+#LST ImageCollection for studyarea
+//Import Landsat 8 scaled radiance (Landsat 8 Tier 1 TOA) ImageCollection
+var landsat_8 = ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
+    .filterBounds(roi)
+    .filterDate('2023-01-01', '2023-12-30')
+    .sort('CLOUD_COVER')
+    .first();
+
+#LST CODE
+
+// Import LST image collection.
+var modis = ee.ImageCollection("MODIS/061/MOD11A2")
+
+// Define a date range of interest; here, a start date is defined and the end
+// date is determined by advancing 1 year from the start date.
+var start = ee.Date('2023-01-01');
+var dateRange = ee.DateRange(start, start.advance(1, 'year'));
+
+// Filter the LST collection to include only images intersecting the desired
+// date range.
+var mod11a2 = modis.filterDate(dateRange);
+
+// Select the 1km day and 1km night LST  data band.
+var modLST = mod11a2.select('LST_Day_1km', 'LST_Night_1km');
+print(modLST);
+
+// Scale to Kelvin and convert to Celsius, set image acquisition time.
+var modLSTc = modLST.map(function(img) {
+  return img
+    .multiply(0.02)
+    .subtract(273.15)
+    .copyProperties(img, ['system:time_start']);
+});
+
+print('converted',  modLSTc);
+
+#RANDOM FOREST
+
+// Split train and test
+var train = sample.filter(ee.Filter.lte('random', 0.8));
+var test = sample.filter(ee.Filter.gt('random', 0.8));
+print(
+  ee.String('Sample train: ').cat(ee.String(train.size())),
+  ee.String('Sample test: ').cat(ee.String(test.size()))
+);
+
+// Build random forest model for prediction
+var model = ee.Classifier.smileRandomForest(10).train(train, predictName, propNames);
+
+// Test model accuracy
+var cm = test.classify(model, 'prediction').errorMatrix('end', 'prediction');
+print(
+  'Confusion matrix', cm,
+  ee.String('Accuracy: ').cat(ee.String(cm.accuracy())),
+  ee.String('Kappa: ').cat(ee.String(cm.kappa()))
+);
+
+// Apply the model for the variables for 2023
+var pre_lulc2023 = variables.classify(model, 'LULC').set(lulcDict);
+Map.addLayer(pre_lulc2023, {}, 'LULC 2023 Prediction');
+
+
+# WETLAND
+// Median composite
+var median = col.median().clip(roi);
+Map.addLayer(median, { min: [0.1, 0.05, 0], max: [0.4, 0.3, 0.15], bands: ['B5', 'B6', 'B4'] }, 'Median Image');
+Map.addLayer(median.select('MNDWI'), vis, 'Median MNDWI');
+
+// Permanent water or river
+var permanent = median.select('MNDWI').gt(0.3);
+Map.addLayer(permanent.selfMask(), { palette: 'blue' }, 'Permanent water or River');
+
+// Maximum composite
+var max = col.reduce(ee.Reducer.percentile([98])).select('MNDWI_p98').clip(roi);
+Map.addLayer(max, vis, 'Max MNDWI');
+
+// Wetland
+var wetland = max.gt(0).and(permanent.eq(0));
+Map.addLayer(wetland.selfMask(), { palette: 'teal' }, 'Wetland');
+
+# LULC
+//2. Define start date and end date
+var startDate = '2016-01-01';
+var endDate = '2016-05-31';
+
+//3. Load DYNAMIC WORLD Data
+var dw = ee.ImageCollection('GOOGLE/DYNAMICWORLD/V1')
+.filterDate(startDate, endDate);
+//.filterBounds(roi);
+
+
+
+
+
+
+
+
+
